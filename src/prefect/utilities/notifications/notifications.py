@@ -314,3 +314,74 @@ def slack_notifier(
     if not r.ok:
         raise ValueError("Slack notification for {} failed".format(tracked_obj))
     return new_state
+
+
+def discord_message_formatter(
+    tracked_obj: TrackedObjectType,
+    state: "prefect.engine.state.State",
+    backend_info: bool = True,
+) -> dict:
+    notification_context = {
+        "text": "{0} {1} is now in a {2} state".format(
+            type(tracked_obj), tracked_obj.name, type(state).__name__
+        ),
+    }
+
+    if backend_info and prefect.context.get("flow_run_id"):
+        if isinstance(tracked_obj, prefect.Flow):
+            url = prefect.client.Client().get_cloud_url(
+                "flow-run", prefect.context["flow_run_id"], as_user=False
+            )
+
+        elif isinstance(tracked_obj, prefect.Task):
+            url = prefect.client.Client().get_cloud_url(
+                "task-run", prefect.context.get("task_run_id", ""), as_user=False
+            )
+
+        if url:
+            notification_context.update(url=url)
+
+    contents = []
+    for key, val in notification_context.items():
+        contents.append(
+            f"{key + ': ' if key != 'text' else ''}{val}"
+        )
+
+    content = ", ".join(contents)
+    return {"content": content}
+
+
+@curry
+def discord_notifier(
+    tracked_obj: TrackedObjectType,
+    old_state: "prefect.engine.state.State",
+    new_state: "prefect.engine.state.State",
+    ignore_states: list = None,
+    only_states: list = None,
+    webhook_secret: str = None,
+    backend_info: bool = True,
+) -> "prefect.engine.state.State":
+    url = 'https://discord.com/api/webhooks/843377864274608158/0B5sLqrRx4QzC1pu3pKvhEkzQ__5GHz4HyogAVxul9iuK66wVgyUO27mnMyyCUE3Glo8'
+    webhook_url = cast(
+        str, prefect.client.Secret(webhook_secret or "DISCORD_WEBHOOK_URL").get()
+    )
+    ignore_states = ignore_states or []
+    only_states = only_states or []
+
+    if any(isinstance(new_state, ignored) for ignored in ignore_states):
+        return new_state
+
+    if only_states and not any(
+        [isinstance(new_state, included) for included in only_states]
+    ):
+        return new_state
+
+    import requests
+
+    form_data = discord_message_formatter(tracked_obj, new_state, backend_info)
+    r = requests.post(webhook_url, json=form_data)
+    if not r.ok:
+        raise ValueError("Discord notification for {} failed".format(tracked_obj))
+
+    return new_state
+

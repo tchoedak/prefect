@@ -27,6 +27,7 @@ from prefect.engine.state import (
 from prefect.utilities.configuration import set_temporary_config
 from prefect.utilities.notifications import (
     callback_factory,
+    discord_message_formatter,
     gmail_notifier,
     slack_message_formatter,
     slack_notifier,
@@ -109,6 +110,26 @@ def test_formatter_formats_states_with_string_message(state):
     orig = slack_message_formatter(Task(), state(message="I am informative"))
     assert orig["attachments"][0]["fields"][0]["value"] == "I am informative"
     assert json.loads(json.dumps(orig)) == orig
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        Running,
+        Pending,
+        Finished,
+        Failed,
+        TriggerFailed,
+        Cached,
+        Scheduled,
+        Retrying,
+        Success,
+        Skipped,
+    ],
+)
+def test_discord_formatter_formats_states_with_string_message(state):
+    orig = discord_message_formatter(Task(), state())
+    assert orig == {'content': f'Task is now in a {state.__name__} state'}
 
 
 @pytest.mark.parametrize(
