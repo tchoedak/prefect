@@ -6,13 +6,15 @@ from prefect import Task
 from prefect.utilities.tasks import defaults_from_attrs
 
 
-class DruidExecute(Task):
+class DruidQuery(Task):
 	"""
 	"""
 
 	def __init__(
 		self,
 		query: str = None,
+		fetch: str = "one",
+		fetch_count: int = 10,
 		host: str = 'localhost',
 		port: int = 8082,
 		path: str = '/druid/v2/sql/',
@@ -24,6 +26,9 @@ class DruidExecute(Task):
 		ssl_client_cert: str = None,
 		**kwargs
 	):
+		self.query = query
+		self.fetch = fetch
+		self.fetch_count = 10
 		self.host = host
 		self.port = port
 		self.path = path
@@ -31,12 +36,14 @@ class DruidExecute(Task):
 		self.user = user
 		self.password = password
 		self.context = context
-		self.ssl_veirfy_cert = ssl_verify_cert
+		self.ssl_verify_cert = ssl_verify_cert
 		self.ssl_client_cert = ssl_client_cert
 		super().__init__(**kwargs)
 
 	@defaults_from_attrs(
 		"query",
+		"fetch",
+		"fetch_count",
 		"host",
 		"port",
 		"path",
@@ -50,6 +57,8 @@ class DruidExecute(Task):
 	def run(
 		self,
 		query: str = None,
+		fetch: str = "one",
+		fetch_count: int = 10,
 		host: str = 'localhost',
 		port: int = 8082,
 		path: str = '/druid/v2/sql/',
@@ -76,13 +85,17 @@ class DruidExecute(Task):
 			ssl_client_cert=ssl_client_cert,
 		)
 
-		try:
-			with conn, cursor() as cursor:
-				executed = cursor.execute(query)
-				return executed
+		with conn:
+			cursor = conn.cursor()
+			cursor.execute(query)
 
-		finally:
-			conn.close()
+			if fetch == "all":
+				results = cursor.fetchall()
+			elif fetch == "many":
+				results = cursor.fetchmany(fetch_count)
+			else:
+				results = cursor.fetchone()
+			return results
 
 
 class DruidTimeSeries(Task):
@@ -130,7 +143,7 @@ class DruidTimeSeries(Task):
 	):
 		query_client = PyDruid(url=url, endpoint=endpoint, cafile=cafile)
 
-		time_series = query_client.time_series(
+		time_series = query_client.timeseries(
 			datasource=datasource,
 			granularity=granularity,
 			intervals=intervals,
@@ -255,7 +268,7 @@ class DruidGroupBy(Task):
 		granularity: str = None,
 		intervals: Union[str, List[str]] = None,
 		aggregations: dict = None,
-		dimensions: str = None,
+		dimensions: List[str] = None,
 		**druid_kwargs,
 	):
 		query_client = PyDruid(url, endpoint, cafile)
