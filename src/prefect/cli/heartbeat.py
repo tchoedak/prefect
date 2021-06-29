@@ -75,7 +75,15 @@ def task_run(id, num):
     help="The number of times to heartbeat; if not provided, will heartbeat for forever.",
     hidden=True,
 )
-def flow_run(id, num):
+@click.option(
+    "--misses",
+    "-m",
+    type=int,
+    help="The number of heartbeat misses that will result in a failure",
+    hidden=True,
+    default=2,
+)
+def flow_run(id, num, misses):
     """
     Send heartbeats back to the Prefect API for a given flow run ID.
 
@@ -90,9 +98,18 @@ def flow_run(id, num):
 
     client = Client()
     iter_count = 0
+    missed_heartbeats = 0
 
     while iter_count < (num or 1):
-        client.update_flow_run_heartbeat(id)  # type: ignore
-        if num:
-            iter_count += 1
-        time.sleep(config.cloud.heartbeat_interval)
+        try:
+            client.update_flow_run_heartbeat(id)  # type: ignore
+            if num:
+                iter_count += 1
+            time.sleep(config.cloud.heartbeat_interval)
+        except Exception as exc:
+            missed_heartbeats += 1
+            if missed_heartbeats >= misses:
+                raise exc
+            else:
+                print(exc)
+                time.sleep(config.cloud.heartbeat_interval)
